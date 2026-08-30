@@ -9,33 +9,52 @@ export function PasswordGate({ onSuccess }: PasswordGateProps) {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // Fallback client-side password check for static hosts like GitHub Pages.
+  // Default matches the local .env MENTOR_PASSWORD value.
+  const CLIENT_PASSWORD = import.meta.env.VITE_MENTOR_PASSWORD ?? 'ZY';
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!password || status === 'checking' || status === 'unlocking') return;
     setStatus('checking');
+
+    // Try backend auth first (used in local dev)
     try {
       const response = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-      if (!response.ok) {
-        setStatus(response.status === 401 ? 'wrong' : 'unavailable');
+      if (response.ok) {
+        setStatus('unlocking');
+        window.setTimeout(onSuccess, 1150);
+        return;
+      }
+      // 401 means wrong password; other errors may mean no backend, fall through
+      if (response.status === 401) {
+        setStatus('wrong');
         window.setTimeout(() => {
           setStatus('idle');
           inputRef.current?.focus();
         }, 1500);
         return;
       }
-      setStatus('unlocking');
-      window.setTimeout(onSuccess, 1150);
     } catch {
-      setStatus('unavailable');
+      // Network error: no backend available, fall through to client check
+    }
+
+    // Client-side fallback
+    if (password !== CLIENT_PASSWORD) {
+      setStatus('wrong');
       window.setTimeout(() => {
         setStatus('idle');
         inputRef.current?.focus();
-      }, 1800);
+      }, 1500);
+      return;
     }
+
+    setStatus('unlocking');
+    window.setTimeout(onSuccess, 1150);
   }
 
   const message = status === 'wrong'
